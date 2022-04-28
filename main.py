@@ -1,5 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
+import json
+import re
 
 
 class Stock:
@@ -16,7 +18,11 @@ class Stock:
         self.difference_rs = 0
 
 
-def scrape_nepse_table_data(html_table:str) -> list[Stock]:
+def scrape_nepse_table_data() -> list[Stock]:
+    """
+    Returns a list of `Stock` objects parsing the table from Nepal Stock Exchange.
+    """
+    html_table = requests.get('http://www.nepalstock.com/todaysprice/export').text
     soup = BeautifulSoup(html_table)
     rows = soup.findAll('tr')
 
@@ -35,19 +41,43 @@ def scrape_nepse_table_data(html_table:str) -> list[Stock]:
         stock.difference_rs = i.findAll('td')[8].text
 
         stocks.append(stock)
-    
+
     return stocks
 
 
-stocks = []
+def fetch_symbols_from_merolagani():
+    """
+    Returns a list of tuple i.e. (`Nepse Code`, `Stock Name`)
+    """
+    with requests.get('http://merolagani.com/handlers/AutoSuggestHandler.ashx?type=Company') as resp:
+        suggestions = json.loads(resp.text)
+        companies = [
+            (
+                re.findall('(.*)\s*\(.*\)', _['l'])[0].strip(),
+                re.findall('\((.*)\)', _['l'])[0].strip()
+            )
+            for _ in suggestions
+        ]
 
-with requests.get('http://www.nepalstock.com/todaysprice/export') as resp:
-    stocks = scrape_nepse_table_data(resp.text)
+        return companies
 
+
+def get_stock_info(nepse_code: str) -> dict:
+    """
+    Fetch stock info from MeroLagani
+    """
+    page_source = requests.get(f'https://merolagani.com/CompanyDetail.aspx?symbol={nepse_code}').text
+    soup = BeautifulSoup(page_source, features='lxml')
+    table = soup.find('table')
+    info = dict()
+
+    for tbody in table.children:
+        data = tuple([_.strip() for _ in tbody.get_text().split('\n') if _.strip()])
+        if data and len(data) == 2:
+            info[data[0]] = data[1]
+
+    return info
 
 
 if __name__ == '__main__':
-    print(len(stocks))
-
-
-
+    print(get_stock_info('NICA'))
